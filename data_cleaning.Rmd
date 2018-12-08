@@ -1,0 +1,74 @@
+---
+title: "data_cleaning"
+output: html_document
+---
+
+```{r}
+library(tidyverse)
+```
+
+```{r read-data}
+beauty_df <- read.csv("data/beauty_cleaned.csv", stringsAsFactors = FALSE)
+beauty_df <- beauty_df[beauty_df$title != "", ]
+
+
+beauty_df_summary<- beauty_df %>% 
+  group_by(asin) %>% 
+  summarise(mean_rate = mean(overall, na.rm = TRUE), 
+            mean_price = mean(price, na.rm = TRUE))#,
+            # cnt = beauty_df %>% add_count(reviewerID) %>% select(n)) #%>% 
+  # add_count(reviewerID)
+
+```
+
+```{r clean-data}
+# Is there a correlation between product ratings on Amazon and various product-related features such as
+# price, number of comments, and the superlatives used in comments
+
+# weighted SE
+model1 <- lm(overall ~ price, data=beauty_df)
+summary(model1)
+```
+
+```{r text-cleaning}
+library(tidytext)
+
+beauty_review_words <- beauty_df %>%
+  unnest_tokens(word, reviewText) %>%
+  filter(str_detect(word, "[a-z']$"),
+         !word %in% stop_words$word)
+
+beauty_review_words <- beauty_review_words %>%
+  count(asin, word, sort = TRUE) %>%
+  ungroup()
+```
+
+```{r get-sentiment}
+beauty_sentiments <- beauty_review_words %>%
+  inner_join(get_sentiments("afinn"), by = "word") %>% # only leaving rows with words that are classified within afinn
+  group_by(asin) %>%
+  summarize(score = sum(score * n) / sum(n))
+
+beauty_sentiments %>%
+  mutate(asin = reorder(asin, score)) %>%
+  ggplot(aes(asin, score, fill = score > 0)) +
+  geom_col(show.legend = FALSE) +
+  coord_flip() +
+  ylab("Average sentiment score")
+```
+
+```{r}
+ggplot(beauty_df, aes(x=overall, y = price)) +
+  geom_point()
+```
+
+```{r}
+# aggregarted by each individual product
+model2 <- lm(mean_rate ~ mean_price, data = beauty_df_summary)
+summary(model2)
+```
+
+```{r}
+plot(model2)
+```
+
