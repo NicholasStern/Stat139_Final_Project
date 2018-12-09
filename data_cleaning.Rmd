@@ -8,7 +8,7 @@ library(tidyverse)
 ```
 
 ```{r read-data}
-beauty_df <- read.csv("data/beauty_cleaned.csv", stringsAsFactors = FALSE)
+beauty_df <- read.csv("data/musical_instruments_cleaned.csv", stringsAsFactors = FALSE)
 beauty_df <- beauty_df[beauty_df$title != "", ]
 
 
@@ -34,13 +34,26 @@ summary(model1)
 library(tidytext)
 
 beauty_review_words <- beauty_df %>%
-  unnest_tokens(word, reviewText, ) %>%
+  unnest_tokens(word, reviewText) %>%
   filter(str_detect(word, "[a-z']$"),
          !word %in% stop_words$word)
 
-beauty_review_words <- beauty_review_words %>%
+beauty_review_words2 <- beauty_review_words %>%
   count(asin, word, sort = TRUE) %>%
   ungroup()
+```
+
+```{r add text-features}
+library(stringr)
+# load("data/music_instruments_sentiments.RData")
+beauty_df <- beauty_df %>% 
+  mutate(num_char = nchar(reviewText),
+         num_words = sapply(strsplit(reviewText, " "), length),
+         num_allcaps = str_count(reviewText, "\\b[A-Z]{2,}\\b"),
+         num_exemark = str_count(reviewText, "!"),
+         num_qmark = str_count(reviewText, "\\?"),
+         num_allmark = num_exemark + num_qmark
+         )
 ```
 
 ```{r get-sentiment}
@@ -74,14 +87,6 @@ contributions %>%
   ggplot(aes(word, contribution, fill = contribution > 0)) +
   geom_col(show.legend = FALSE) +
   coord_flip()
-```
-
-```{r}
-top_sentiment_words <- beauty_review_words %>%
-  inner_join(get_sentiments("afinn"), by = "word") %>%
-  mutate(contribution = score * n / sum(n))
-
-top_sentiment_words
 ```
 
 ```{r}
