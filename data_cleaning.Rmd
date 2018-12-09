@@ -34,7 +34,7 @@ summary(model1)
 library(tidytext)
 
 beauty_review_words <- beauty_df %>%
-  unnest_tokens(word, reviewText) %>%
+  unnest_tokens(word, reviewText, ) %>%
   filter(str_detect(word, "[a-z']$"),
          !word %in% stop_words$word)
 
@@ -58,13 +58,43 @@ beauty_sentiments %>%
 ```
 
 ```{r}
+contributions <- beauty_review_words %>%
+  inner_join(get_sentiments("afinn"), by = "word") %>%
+  group_by(word) %>%
+  summarize(occurences = n(),
+            contribution = sum(score))
+
+contributions
+```
+
+```{r}
+contributions %>%
+  top_n(25, abs(contribution)) %>%
+  mutate(word = reorder(word, contribution)) %>%
+  ggplot(aes(word, contribution, fill = contribution > 0)) +
+  geom_col(show.legend = FALSE) +
+  coord_flip()
+```
+
+```{r}
+top_sentiment_words <- beauty_review_words %>%
+  inner_join(get_sentiments("afinn"), by = "word") %>%
+  mutate(contribution = score * n / sum(n))
+
+top_sentiment_words
+```
+
+```{r}
 ggplot(beauty_df, aes(x=overall, y = price)) +
   geom_point()
 ```
 
 ```{r}
 # aggregarted by each individual product
-model2 <- lm(mean_rate ~ mean_price, data = beauty_df_summary)
+beauty_df_summary_senti <- beauty_df_summary %>% 
+  left_join(beauty_sentiments)
+
+model2 <- lm(mean_rate ~ mean_price*score, data = beauty_df_summary_senti)
 summary(model2)
 ```
 
