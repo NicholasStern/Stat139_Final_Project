@@ -1,0 +1,119 @@
+---
+title: "Inter-Category ANOVA Test"
+output: pdf_document
+---
+
+```{r}
+# read in csv's
+baby = read.csv('data/baby/baby_grouped.csv')
+music = read.csv('data/music/musical_instruments_grouped.csv')
+sports = read.csv('data/sports/sports_grouped.csv')
+electronics = read.csv('data/electronics/electronics_grouped.csv')
+```
+
+```{r}
+# Checking for normality assumptions
+hist(baby$overall, main='Baby Rating Distribution')
+hist(music$overall, main='Music Rating Distribution')
+hist(sports$overall, main='Sports Rating Distribution')
+hist(electronics$overall, main='Electronics Rating Distribution')
+```
+
+```{r}
+# Checking for equal variance assumption
+boxplot(baby$overall, music$overall, sports$overall, electronics$overall, names=c('baby','music', 'sports', 'electronics'))
+```
+
+```{r}
+# Transforming the Data
+# baby_rt = log(2*mean(baby$overall) - baby$overall)
+# music_rt = log(2*mean(music$overall) - music$overall)
+# hist(baby_rt, main='Baby Rating Transformed')
+# hist(music_rt, main='Music Rating Transformed')
+# boxplot(baby_rt, music_rt, names=c('baby','music'))
+```
+
+```{r}
+# Anova Test Example
+# reshape and clean the data
+# require(reshape2)
+# max.len = max(c(length(baby_rt), length(music_rt)))
+# baby_rt = c(baby_rt, rep(NA, max.len - length(baby_rt)))
+# music_rt = c(music_rt, rep(NA, max.len - length(music_rt)))
+# df_temp = as.data.frame(cbind(baby_rt, music_rt))
+# df = na.omit(melt(df_temp, value.name='Rating', variable.name='Class'))
+# 
+# # ANOVA
+# model = lm(Rating ~ Class, data=df)
+# anova(model)
+```
+
+
+```{r}
+# Rank sum test example
+# wilcox.test(baby$overall, music$overall, alternative = "two.sided")
+```
+
+```{r}
+# DTK Test example
+# require(DTK)
+# x = c(baby$overall, music$overall)
+# f = gl.unequal(n=2, k=c(length(baby$overall), length(music$overall)))
+# DTK.result = DTK.test(x=x, f=f, a=0.05)
+# DTK.result
+# DTK.plot(DTK.result)
+```
+
+```{r}
+require('combinat')
+dfs = list(baby, music, sports, electronics)
+n_groups = length(dfs)
+if (n_groups == 2) {
+  new_alpha = .05
+  pairs = matrix(c(1,2), nrows=2, ncols=1)
+  df1 = dfs[[1]]
+  df2 = dfs[[2]]
+  p.values = wilcox.test(df1$overall, df2$overall, alternative = "two.sided")$p.val
+} else {
+  N = dim(combn(n_groups,2))[2]
+  pairs = combn(seq(1,n_groups), 2)
+  new_alpha = .05/N
+  p.values = rep(NA, N)
+  for (i in 1:N) {
+    df1 = dfs[[pairs[1,i]]]
+    df2 = dfs[[pairs[2,i]]]
+    p.values[i] = wilcox.test(df1$overall, df2$overall, alternative = "two.sided")$p.val
+  }
+}
+
+names = c('Baby', 'Music', 'Sports', 'Electronics')
+sig.tests = p.values < new_alpha
+
+sig.pairs = pairs[,sig.tests]  # significant pairs
+sig.pvals = p.values[p.values < new_alpha] # significant p-values
+
+nonsig.pairs = pairs[,!sig.tests]
+nonsig.pvals = p.values[p.values >= new_alpha]
+
+paste('Significant Pairs:')
+if (ncol(sig.pairs) > 0) {
+  for (i in 1:ncol(sig.pairs)) {
+  cat(sprintf('(%s, %s) p-val: %.5g\n', names[sig.pairs[1,i]], names[sig.pairs[2,i]], sig.pvals[i]))
+  }
+} else {
+  paste('None')
+}
+
+
+paste('Insignificant Pairs:')
+if (ncol(nonsig.pairs) > 0) {
+  for (i in 1:ncol(nonsig.pairs)) {
+  cat(sprintf('(%s, %s) p-val: %.5g\n', names[nonsig.pairs[1,i]], names[nonsig.pairs[2,i]], nonsig.pvals[i]))
+  }
+} else {
+  paste('None')
+}
+
+```
+
+
