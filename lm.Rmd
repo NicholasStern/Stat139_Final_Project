@@ -1,0 +1,117 @@
+---
+title: "Lm"
+author: "Yiming Xu"
+date: "12/9/2018"
+output: pdf_document
+---
+
+```{r}
+library(MASS)
+beauty <- read.csv('data/beauty_cleaned.csv', stringsAsFactors = FALSE)
+load('data/beauty_sentiments.RData')
+```
+
+Doing Feature Engineering in the unit of a single review:
+```{r add text-features}
+library(tidyverse)
+beauty <- beauty %>% 
+  mutate(
+    num_char = nchar(reviewText),
+    # transform all the predictors as they are all right skewed
+         num_words = sapply(strsplit(reviewText, " "), length), 
+         num_allcaps = str_count(reviewText, "\\b[A-Z]{2,}\\b"),
+         num_exemark = str_count(reviewText, "!"),
+         num_qmark = str_count(reviewText, "\\?"),
+         num_allmark = num_exemark + num_qmark
+         )
+```
+
+Aggregating Features in the unit of a single product:
+```{r}
+review_cnt <- beauty %>% count(asin)
+beauty.avg <- beauty %>% 
+  group_by(asin) %>% 
+  summarise_at(
+    vars(price,overall, num_char, num_words, num_allcaps, num_allmark), mean
+    ) %>% 
+  left_join(beauty_sentiments, by = "asin") %>% # merge with the sentiment data 
+  left_join(review_cnt, by= "asin")
+```
+
+
+```{r}
+# only take prince > 1 to make it more reasonable to do WLS
+beauty.avg <- beauty.avg %>% filter(price > 1) 
+# do the transformation
+beauty.avg$rating.ed <- log(2*mean(beauty.avg$overall)-beauty.avg$overall)
+beauty.avg$price.ed <- log(beauty.avg$price)
+beauty.avg$num_char.ed <- log(beauty.avg$num_char)
+beauty.avg$num_words.ed <- log(beauty.avg$num_words)
+beauty.avg$num_allcaps.ed <- log(beauty.avg$num_allcaps+1) # it has zeros so we have to add an 1 to it
+beauty.avg$num_allmark.ed <- log(100*beauty.avg$num_allmark) # change it into percentage
+beauty.avg$num_review.ed <- log(beauty.avg$n)
+beauty.avg$sentiment <- beauty.avg$score
+
+# important: since we flip our response variable, the direction(positive/negative) of the relationship between predictors and the actual ratings is flipped too.
+
+par(mfrow=c(1,2))
+hist(beauty.avg$overall,main='Response Before Transformation')
+hist(beauty.avg$rating.ed,main='Response After Transformation')
+par(mfrow=c(3,2))
+hist(beauty.avg$price,main='Mean Price Before Transformation')
+hist(beauty.avg$price.ed,main='Mean Price After Transformation')
+hist(beauty.avg$num_char,main='AVG Number of Characters Before Transformation')
+hist(beauty.avg$num_char.ed,main='AVG Number of Characters After Transformation')
+hist(beauty.avg$num_words,main='AVG Number of Words Before Transformation')
+hist(beauty.avg$num_words.ed,main='AVG Number of Words After Transformation')
+hist(beauty.avg$num_allcaps,main='AVG Number of Capitalized Words Before Transformation')
+hist(beauty.avg$num_allcaps.ed,main='AVG Number of Capitalized Words After Transformation')
+hist(beauty.avg$num_allmark,main='AVG Number of All Marks Before Transformation')
+hist(beauty.avg$num_allmark.ed,main='AVG Number of All Marks After Transformation')
+hist(beauty.avg$n,main='Number of Reviews Before Transformation')
+hist(beauty.avg$num_review.ed,main='Number of Reviews After Transformation')
+```
+
+```{r}
+# generate a dataset with transformed features
+beauty.ed <- beauty.avg[c('asin','rating.ed','price.ed','num_char.ed','num_words.ed','num_allcaps.ed','num_allmark.ed','num_review.ed','sentiment')]
+```
+
+```{r modeling}
+summary(model1<-lm(rating.ed~price.ed,data=beauty.ed))
+summary(model2<-lm(rating.ed~.-asin,data=beauty.ed))
+summary(model3<-lm(rating.ed~.-asin+price.ed*sentiment,data=beauty.ed))
+summary(model4<-lm(rating.ed~(.-asin)^2, data=beauty.ed)) # maybe we can try some model selection here
+```
+
+```{r}
+model2.w <- lm(rating.ed~ .-asin, data=beauty.ed, weights=1/(rating.ed)^2)
+model2.rlm <-rlm(rating.ed ~ . - asin,data=beauty.ed)
+```
+
+
+```{r}
+par(mfrow=c(3,4))
+# plot(model1, main='Model1\n') 
+plot(model2, main='Model2\n') # indicate that we need to conduct WLS here, increasing variance
+plot(model2.w) # the result of the WLS is far from satisfactory
+plot(model2.rlm)
+
+par(mfrow=c(2,4))
+plot(model3, main='Model3\n') # indicate that we need to conduct WLS here
+plot(model4, main='Model4\n') # indicate that we need to conduct WLS here
+```
+
+```{r WLS weighted}
+# the residuals seem not to have a clear relationship with any of the Xj, and the rlm by IRLS seems to perform so-so
+par(mfrow=c(2,4))
+plot(model2$residuals~beauty.ed$price.ed)
+plot(model2$residuals~beauty.ed$num_char.ed)
+plot(model2$residuals~beauty.ed$num_words.ed)
+plot(model2$residuals~beauty.ed$num_allcaps.ed)
+plot(model2$residuals~beauty.ed$num_allmark.ed)
+plot(model2$residuals~beauty.ed$num_review.ed)
+plot(model2$residuals~beauty.ed$sentiment)
+```
+
+
