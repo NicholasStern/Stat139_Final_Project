@@ -105,15 +105,16 @@ colnames(beauty.avg) <- gsub("^n$", "num_review", colnames(beauty.avg))
 beauty.ed <- beauty.avg[c('asin','rating.ed','price.ed','num_char.ed','num_words.ed','num_allcaps.ed','num_allmark.ed','num_review.ed','sentiment')]
 ```
 
+```{r}
+anova(model1,model1.1)
+```
+
 
 ```{r modeling}
 summary(model1<-lm(rating.ed~price.ed,data=beauty.ed))
-summary(model2<-lm(rating.ed~(.-asin)^2, data=beauty.ed)) # maybe we can try some model selection here
+summary(model1.1<-lm(rating.ed~.-asin, data=beauty.ed))
+model2<-lm(rating.ed~(.-asin)^2, data=beauty.ed) # maybe we can try some model selection here
 ```
-```{r}
-AIC(model1,final.model,final.model.w)
-```
-
 
 ```{r}
 model2<-lm(rating.ed~(.-asin)^2, data=beauty.ed)
@@ -131,16 +132,13 @@ plot(model2, main='Model2\n') # indicate that we need to conduct WLS here, incre
 plot(model2.w, main='Model2 WLS\n') # the result of the WLS is far from satisfactory
 ```
 
-```{r}
-summary(final.model)
-```
-
 
 ```{r}
 final.model=step(model1, scope=list(lower=model1,upper=model2),direction='both',trace=0)
 ```
 
 ```{r}
+final.model.w = update(final.model,data=beauty.ed,weight=1/num_review.ed)
 summary(final.model.w)
 ```
 
@@ -160,6 +158,8 @@ for (i in 1:nsims){
   }
 }
 ```
+
+
 
 ```{r}
 betas_ci <- matrix(NA,nrow=p, ncol=2)
@@ -182,11 +182,11 @@ betas_ci
 # plot(model2$residuals~beauty.ed$num_words.ed)
 # plot(model2$residuals~beauty.ed$num_allcaps.ed)
 # plot(model2$residuals~beauty.ed$num_allmark.ed)
-plot(model2$residuals~beauty.ed$num_review.ed)
+# plot(model2$residuals~beauty.ed$num_review.ed)
 # plot(model2$residuals~beauty.ed$sentiment)
 ```
 
 ```{r}
-knitr::kable(trial)
+# knitr::kable(trial)
 ```
 
