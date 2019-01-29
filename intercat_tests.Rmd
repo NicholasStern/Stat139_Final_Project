@@ -21,7 +21,7 @@ hist(electronics$overall, main='Electronics Rating Distribution')
 
 ```{r}
 # Checking for equal variance assumption
-boxplot(baby$overall, music$overall, sports$overall, electronics$overall, names=c('baby','music', 'sports', 'electronics'))
+boxplot(baby$overall, music$overall, sports$overall, electronics$overall, names=c('baby','music', 'sports', 'electronics'), main = 'Distributions of Categories', ylab='Average Rating')
 ```
 
 ```{r}
@@ -113,7 +113,6 @@ if (ncol(nonsig.pairs) > 0) {
 } else {
   paste('None')
 }
-
 ```
 
 
