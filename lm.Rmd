@@ -1,0 +1,169 @@
+---
+title: "Lm"
+author: "Yiming Xu"
+date: "12/9/2018"
+output: pdf_document
+---
+
+```{r}
+library(MASS)
+beauty <- read.csv('data/beauty_cleaned.csv', stringsAsFactors = FALSE)
+load('data/beauty_sentiments.RData')
+```
+
+Doing Feature Engineering in the unit of a single review:
+```{r add text-features}
+library(tidyverse)
+beauty <- beauty %>% 
+  mutate(
+    num_char = nchar(reviewText),
+    # transform all the predictors as they are all right skewed
+         num_words = sapply(strsplit(reviewText, " "), length), 
+         num_allcaps = str_count(reviewText, "\\b[A-Z]{2,}\\b"),
+         num_exemark = str_count(reviewText, "!"),
+         num_qmark = str_count(reviewText, "\\?"),
+         num_allmark = num_exemark + num_qmark
+         )
+```
+
+Aggregating Features in the unit of a single product:
+```{r}
+review_cnt <- beauty %>% count(asin)
+beauty.avg <- beauty %>% 
+  group_by(asin) %>% 
+  summarise_at(
+    vars(price,overall, num_char, num_words, num_allcaps, num_allmark), mean
+    ) %>% 
+  left_join(beauty_sentiments, by = "asin") %>% # merge with the sentiment data 
+  left_join(review_cnt, by= "asin")
+```
+
+```{r}
+# only take prince > 1 to make it more reasonable to do WLS
+beauty.avg <- beauty.avg %>% filter(price > 1)
+# do the transformation
+beauty.avg$rating.ed <- log(2*mean(beauty.avg$overall)-beauty.avg$overall)
+beauty.avg$price.ed <- log(beauty.avg$price)
+beauty.avg$num_char.ed <- log(beauty.avg$num_char)
+beauty.avg$num_words.ed <- log(beauty.avg$num_words)
+beauty.avg$num_allcaps.ed <- log(beauty.avg$num_allcaps+1) # it has zeros so we have to add an 1 to it
+beauty.avg$num_allmark.ed <- log(100*beauty.avg$num_allmark) # change it into percentage
+beauty.avg$num_review.ed <- log(beauty.avg$n)
+colnames(beauty.avg)[grep("score", colnames(beauty.avg))] <- "sentiment" # rename score to sentiment
+
+# important: since we flip our response variable, the direction(positive/negative) of the relationship between predictors and the actual ratings is flipped too.
+
+# par(mfrow=c(1,2))
+# hist(beauty.avg$overall,main='Response Before Transformation')
+# hist(beauty.avg$rating.ed,main='Response After Transformation')
+# par(mfrow=c(3,2))
+# hist(beauty.avg$price,main='Mean Price Before Transformation')
+# hist(beauty.avg$price.ed,main='Mean Price After Transformation')
+# hist(beauty.avg$num_char,main='AVG Number of Characters Before Transformation')
+# hist(beauty.avg$num_char.ed,main='AVG Number of Characters After Transformation')
+# hist(beauty.avg$num_words,main='AVG Number of Words Before Transformation')
+# hist(beauty.avg$num_words.ed,main='AVG Number of Words After Transformation')
+# hist(beauty.avg$num_allcaps,main='AVG Number of Capitalized Words Before Transformation')
+# hist(beauty.avg$num_allcaps.ed,main='AVG Number of Capitalized Words After Transformation')
+# hist(beauty.avg$num_allmark,main='AVG Number of All Marks Before Transformation')
+# hist(beauty.avg$num_allmark.ed,main='AVG Number of All Marks After Transformation')
+```
+
+```{r}
+# png('response.png', width = 560, height = 430)
+# par(mfrow=c(1,2))
+# hist(beauty.avg$overall,main='Before Transformation', xlab='rating')
+# hist(beauty.avg$rating.ed,main='After Transformation', xlab='rating.ed')
+# dev.off()
+```
+
+```{r}
+colnames(beauty.avg) <- gsub("^n$", "num_review", colnames(beauty.avg))
+
+# features_to_plot=list("num_char", "num_words", "num_allcaps", "num_allmark","num_review")
+# names(features_to_plot) = paste("Number of", c("characters", "words", "all caps words", "question and exclamation marks", "reviews"))
+# 
+# for (i in 1:length(features_to_plot)){
+#   char_name = features_to_plot[[i]]
+#   formula1 = paste0("beauty.avg$rating.ed~beauty.avg$", char_name)
+#   formula2 = paste0("beauty.avg$rating.ed~beauty.avg$", char_name, ".ed")
+# 
+#   png_filename = paste0(char_name, ".png")
+#   png(png_filename, width = 560, height = 430)
+#   par(mfrow=c(1,2))
+#   plot(lm(formula1),which=1, main = "Before Transformation", names(features_to_plot)[i])
+#   plot(lm(formula2),which=1, main = "After Transformation", names(features_to_plot)[i])
+#   dev.off()
+# }
+```
+
+Start Modeling:
+```{r}
+# generate a dataset with transformed features
+beauty.ed <- beauty.avg[c('asin','rating.ed','price.ed','num_char.ed','num_words.ed','num_allcaps.ed','num_allmark.ed','num_review.ed','sentiment')]
+```
+
+```{r modeling}
+summary(model1<-lm(rating.ed~price.ed,data=beauty.ed))
+summary(model1.1<-lm(rating.ed~.-asin, data=beauty.ed))
+anova(model1,model1.1) # see if model1.1 has made great improvement from model1
+model2<-lm(rating.ed~(.-asin)^2, data=beauty.ed) # maybe we can try some model selection here
+
+model2<-lm(rating.ed~(.-asin)^2, data=beauty.ed)
+model2.w <- lm(rating.ed~(.-asin)^2, data=beauty.ed, weights = 1/(num_review.ed))
+# model2.rlm <-rlm(rating.ed ~ . - asin,data=beauty.ed)
+```
+
+```{r WLS weighted}
+par(mfrow=c(1,4))
+plot(model1)
+
+png('WLS.png', width = 560, height = 430)
+par(mfrow=c(2,4))
+plot(model2, main='Model2\n') # indicate that we need to conduct WLS here, increasing variance
+plot(model2.w, main='Model2 WLS\n') # the result of the WLS is far from satisfactory
+
+# the residuals seem not to have a clear relationship with any of the Xj, and the rlm by IRLS seems to perform so-so
+# par(mfrow=c(2,4))
+# plot(model2$residuals~beauty.ed$price.ed)
+# plot(model2$residuals~beauty.ed$num_char.ed)
+# plot(model2$residuals~beauty.ed$num_words.ed)
+# plot(model2$residuals~beauty.ed$num_allcaps.ed)
+# plot(model2$residuals~beauty.ed$num_allmark.ed)
+# plot(model2$residuals~beauty.ed$num_review.ed)
+# plot(model2$residuals~beauty.ed$sentiment)
+
+final.model=step(model1, scope=list(lower=model1,upper=model2),direction='both',trace=0)
+final.model.w = update(final.model,data=beauty.ed,weight=1/num_review.ed)
+summary(final.model.w)
+```
+
+
+```{r}
+# Since the performance of WLS is far from satisfactory, we chose to provide Bootstrapped Confidence Interval for each coefficient
+set.seed(2018)
+nsims = 500
+n = nrow(beauty.ed)
+p = length(final.model$coefficients)
+betas_ac = matrix(NA, nrow = p, ncol = nsims)
+for (i in 1:nsims){
+  boot_obs = sample(n, replace=T)
+  data_boot = as.data.frame(beauty.ed[boot_obs,])
+  lm_boot = update(final.model,data=data_boot)
+  for (j in 1:p){
+    betas_ac[j,i] = coef(lm_boot)[j]
+  }
+}
+
+betas_ci <- matrix(NA,nrow=p, ncol=2)
+for (i in 1:p){
+  betas_ci[i,1]=quantile(betas_ac[i,],c(0.025,0.975)[1])
+  betas_ci[i,2]=quantile(betas_ac[i,],c(0.025,0.975)[2])
+}
+
+betas_ci
+```
+
+
+
+
